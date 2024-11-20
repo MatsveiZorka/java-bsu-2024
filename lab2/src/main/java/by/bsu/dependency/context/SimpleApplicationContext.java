@@ -13,44 +13,8 @@ public class SimpleApplicationContext extends AbstractApplicationContext {
      * @param beanClasses классы, из которых требуется создать бины
      */
     public SimpleApplicationContext(Class<?>... beanClasses) {
-        throw new IllegalStateException("not implemented");
-    }
-
-    /**
-     * Помимо прочего, метод должен заниматься внедрением зависимостей в создаваемые объекты
-     */
-    @Override
-    public void start() {
-        throw new IllegalStateException("not implemented");
-    }
-
-    @Override
-    public boolean isRunning() {
-        throw new IllegalStateException("not implemented");
-    }
-
-    @Override
-    public boolean containsBean(String name) {
-        throw new IllegalStateException("not implemented");
-    }
-
-    @Override
-    public Object getBean(String name) {
-        throw new IllegalStateException("not implemented");
-    }
-
-    @Override
-    public <T> T getBean(Class<T> clazz) {
-        throw new IllegalStateException("not implemented");
-    }
-
-    @Override
-    public boolean isPrototype(String name) {
-        throw new IllegalStateException("not implemented");
-    }
-
-    @Override
-    public boolean isSingleton(String name) {
-        throw new IllegalStateException("not implemented");
+        for (var clazz : beanClasses) {
+            super.addBean(clazz);
+        }
     }
 }

@@ -3,10 +3,12 @@ package by.bsu.dependency.context;
 import by.bsu.dependency.annotation.Bean;
 import by.bsu.dependency.annotation.BeanScope;
 import by.bsu.dependency.annotation.Inject;
+import by.bsu.dependency.annotation.PostConstruct;
 import by.bsu.dependency.exceptions.ApplicationContextNotStartedException;
 import by.bsu.dependency.exceptions.NoSuchBeanDefinitionException;
 
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.*;
 
 public abstract class AbstractApplicationContext implements ApplicationContext {
@@ -28,15 +30,26 @@ public abstract class AbstractApplicationContext implements ApplicationContext {
             BeanScope scope = clazz.getAnnotation(Bean.class).scope();
 
             if (Objects.equals(name, "")) {
-                name = clazz.getName();
-                String firstLetter = name.substring(0, 1);
-                String restOfName = name.substring(1);
-                firstLetter = firstLetter.toLowerCase();
-                name = firstLetter + restOfName;
+                name = createName(clazz.getName());
             }
             beans.put(name, clazz);
             scopes.put(clazz, scope);
+        } else {
+            BeanScope scope = BeanScope.SINGLETON;
+            String name = createName(clazz.getName());
+
+            beans.put(name, clazz);
+            scopes.put(clazz, scope);
         }
+    }
+
+    public String createName(String name) {
+        String firstLetter = name.substring(0, 1);
+        String restOfName = name.substring(1);
+        firstLetter = firstLetter.toLowerCase();
+        name = firstLetter + restOfName;
+
+        return name;
     }
 
     /**
@@ -53,25 +66,47 @@ public abstract class AbstractApplicationContext implements ApplicationContext {
         state = ContextStatus.STARTED;
         scopes.forEach(
                 (beanClass, beanScope) -> {
-                    singletons.put(beanClass, instantiateBean(beanClass));
+                    if (beanScope == BeanScope.SINGLETON)
+                        singletons.put(beanClass, instantiateBean(beanClass));
                 });
 
         singletons.forEach(
-                (beanClass, obj) -> {
-                    Arrays.stream(beanClass.getDeclaredFields())
-                            .forEach(field -> {
-                                if (field.isAnnotationPresent(Inject.class)) {
-                                    try {
-                                        field.setAccessible(true);
-                                        field.set(obj, getBean(field.getType()));
-                                    } catch (IllegalAccessException e) {
-                                        throw new RuntimeException("You have no rights...");
-                                    }
-                                }
-                            });
-                }
+                (beanClass, obj) -> Inject(obj)
+        );
+
+        singletons.forEach(
+                (beanClass, obj) -> PostConstruct(obj)
         );
     }
+
+    private void Inject(Object obj) {
+        var beanClass = obj.getClass();
+        Arrays.stream(beanClass.getDeclaredFields())
+                .forEach(field -> {
+                    if (field.isAnnotationPresent(Inject.class)) {
+                        try {
+                            field.setAccessible(true);
+                            field.set(obj, getBean(field.getType()));
+                        } catch (IllegalAccessException e) {
+                            throw new RuntimeException("You have no rights...");
+                        }
+                    }
+                });
+    }
+
+    private void PostConstruct(Object obj) {
+        for (Method meth : obj.getClass().getDeclaredMethods()) {
+            if (meth.isAnnotationPresent(PostConstruct.class)) {
+                try {
+                    meth.setAccessible(true);
+                    meth.invoke(obj);
+                } catch (IllegalAccessException | InvocationTargetException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }
+    }
+
 
     @Override
     public boolean isRunning() {
@@ -97,23 +132,34 @@ public abstract class AbstractApplicationContext implements ApplicationContext {
      */
     @Override
     public Object getBean(String name) {
+        assertRunning();
+        assertNotEmpty(beans.get(name));
         return getBean(beans.get(name));
+    }
+
+    private void assertRunning() {
+        if (!isRunning()) {
+            throw new ApplicationContextNotStartedException();
+        }
+    }
+
+    private void assertNotEmpty(Class<?> clazz) {
+        if (!scopes.containsKey(clazz))
+            throw new NoSuchBeanDefinitionException();
     }
 
     @Override
     public <T> T getBean(Class<T> clazz) {
-        String nm = clazz.getAnnotation(Bean.class).name();
-        if (!isRunning()) {
-            throw new ApplicationContextNotStartedException();
-        }
-        if (!containsBean(nm)) {
-            throw new NoSuchBeanDefinitionException();
-        }
+        assertRunning();
+        assertNotEmpty(clazz);
 
         if (scopes.get(clazz) == BeanScope.SINGLETON) {
             return (T) singletons.get(clazz);
         } else {
-            return instantiateBean(clazz);
+            var newObject = instantiateBean(clazz);
+            Inject(newObject);
+            PostConstruct(newObject);
+            return newObject;
         }
     }
 
